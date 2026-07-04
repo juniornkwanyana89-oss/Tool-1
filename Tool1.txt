@@ -1,0 +1,396 @@
+import { useState, useEffect } from "react";
+
+const ORANGE = "#FF6B00";
+const GOLD = "#D4A017";
+const GREEN = "#22C55E";
+const BG = "#0A0A0A";
+const CARD = "#141414";
+const BORDER = "#1E1E1E";
+const MUTED = "#555";
+const TEXT = "#F0F0F0";
+
+const LUCKY_DATES = [2,3,11,12,20,21,29,30];
+const MOON_DAYS = [1]; // Monday
+const JUPITER_DAYS = [4]; // Thursday
+const BRAINROLL_DAYS = [2,4,6]; // Tue, Thu, Sat
+const STRONG_MONTHS = [5,6]; // June (5), July (6) — 0-indexed
+const WEAK_MONTHS = [11,0,1]; // Dec, Jan, Feb
+
+function getSYNE() {
+  return "'Syne', sans-serif";
+}
+
+function reduce(n) {
+  while (n > 9 && n !== 11 && n !== 22 && n !== 33) {
+    n = String(n).split("").reduce((a,c) => a + parseInt(c), 0);
+  }
+  return n;
+}
+
+function getDayEnergy(date, month, year) {
+  // date: 1-31, month: 0-11, year: full
+  const d = new Date(year, month, date);
+  const dow = d.getDay();
+  const isLucky = LUCKY_DATES.includes(date);
+  const isMoon = dow === 1;
+  const isJupiter = dow === 4;
+  const isBrainroll = BRAINROLL_DAYS.includes(dow);
+  const isStrongPeriod = (month === 5 && date >= 20) || month === 6;
+  const isWeakPeriod = WEAK_MONTHS.includes(month);
+
+  let tags = [];
+  if (isLucky) tags.push({ label: "Lucky", color: GOLD });
+  if (isMoon) tags.push({ label: "Moon", color: "#60A5FA" });
+  if (isJupiter) tags.push({ label: "Jupiter", color: ORANGE });
+  if (isBrainroll) tags.push({ label: "Brainroll", color: GREEN });
+  if (isStrongPeriod) tags.push({ label: "Peak", color: "#FFD000" });
+
+  return { isLucky, isMoon, isJupiter, isBrainroll, isStrongPeriod, isWeakPeriod, tags };
+}
+
+function getMonthData(year, month) {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  return { firstDay, daysInMonth };
+}
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+// Pre-built content schedule for Brainroll based on June/July 2026
+function getContentSuggestion(date, month, year) {
+  const dow = new Date(year, month, date).getDay();
+  if (!BRAINROLL_DAYS.includes(dow)) return null;
+  
+  const suggestions = {
+    2: ["Script Day", "Research & write this week's script"],
+    4: ["Upload Day", "Publish + promote on social media"],
+    6: ["Batch Day", "Film/render next 2 videos' scenes"],
+  };
+  return suggestions[dow] || null;
+}
+
+function getBHSuggestion(date, month, year) {
+  const dow = new Date(year, month, date).getDay();
+  const isLucky = LUCKY_DATES.includes(date);
+  const isJupiter = dow === 4;
+  const isMoon = dow === 1;
+  
+  if (isLucky && isJupiter) return "⚡ Send proposals + pitch";
+  if (isLucky && isMoon) return "🌙 Creative work + outreach";
+  if (isLucky) return "✨ Push Branded Heights hard";
+  if (isJupiter) return "♃ Bold moves — pitch clients";
+  if (isMoon) return "🌙 Creative work day";
+  return null;
+}
+
+export default function ContentCalendar() {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [notes, setNotes] = useState({});
+  const [showModal, setShowModal] = useState(false);
+  const [noteInput, setNoteInput] = useState("");
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("cal_notes");
+      if (stored) setNotes(JSON.parse(stored));
+    } catch(e) {}
+  }, []);
+
+  function saveNote(key, val) {
+    const updated = { ...notes, [key]: val };
+    setNotes(updated);
+    try { localStorage.setItem("cal_notes", JSON.stringify(updated)); } catch(e) {}
+  }
+
+  const { firstDay, daysInMonth } = getMonthData(viewYear, viewMonth);
+  const isWeakMonth = WEAK_MONTHS.includes(viewMonth);
+  const isStrongMonth = viewMonth === 5 || viewMonth === 6;
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  }
+
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+
+  function openDay(date) {
+    if (!date) return;
+    setSelectedDay(date);
+    const key = `${viewYear}-${viewMonth}-${date}`;
+    setNoteInput(notes[key] || "");
+    setShowModal(true);
+  }
+
+  const selKey = selectedDay ? `${viewYear}-${viewMonth}-${selectedDay}` : null;
+  const selEnergy = selectedDay ? getDayEnergy(selectedDay, viewMonth, viewYear) : null;
+  const selContent = selectedDay ? getContentSuggestion(selectedDay, viewMonth, viewYear) : null;
+  const selBH = selectedDay ? getBHSuggestion(selectedDay, viewMonth, viewYear) : null;
+  const selDow = selectedDay ? new Date(viewYear, viewMonth, selectedDay).getDay() : null;
+
+  const monthScore = (() => {
+    if (isStrongMonth) return { label: "PEAK PERIOD", color: "#FFD000", desc: "Push everything hard this month. June 20 – July 27 is your Psychic 2 power window." };
+    if (isWeakMonth) return { label: "WEAK PERIOD", color: MUTED, desc: "Avoid major decisions. Focus on planning, research, and behind-the-scenes work." };
+    return { label: "STANDARD MONTH", color: ORANGE, desc: "Work your lucky dates and Moon/Jupiter days. Steady consistent output." };
+  })();
+
+  return (
+    <div style={{ background: BG, minHeight: "100vh", fontFamily: "'DM Sans', sans-serif", color: TEXT, maxWidth: 520, margin: "0 auto", padding: "0 0 60px" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600&display=swap');
+        * { box-sizing: border-box; }
+        .day-cell:active { transform: scale(0.94); }
+        .cal-btn:active { transform: scale(0.9); }
+        textarea { resize: none; outline: none; }
+      `}</style>
+
+      {/* HEADER */}
+      <div style={{ padding: "24px 20px 16px", borderBottom: `1px solid ${BORDER}`, position: "sticky", top: 0, background: "rgba(10,10,10,0.96)", backdropFilter: "blur(12px)", zIndex: 50 }}>
+        <div style={{ fontFamily: getSYNE(), fontSize: 10, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: ORANGE, marginBottom: 2 }}>Samkelo's</div>
+        <div style={{ fontFamily: getSYNE(), fontSize: 22, fontWeight: 800, marginBottom: 12 }}>Lucky Date Calendar</div>
+
+        {/* Month nav */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <button className="cal-btn" onClick={prevMonth} style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT, width: 36, height: 36, borderRadius: 10, cursor: "pointer", fontSize: 16 }}>‹</button>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: getSYNE(), fontSize: 16, fontWeight: 800 }}>{MONTHS[viewMonth]} {viewYear}</div>
+            <div style={{ fontSize: 11, color: monthScore.color, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" }}>{monthScore.label}</div>
+          </div>
+          <button className="cal-btn" onClick={nextMonth} style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT, width: 36, height: 36, borderRadius: 10, cursor: "pointer", fontSize: 16 }}>›</button>
+        </div>
+      </div>
+
+      {/* Month energy banner */}
+      <div style={{ margin: "12px 16px 0", background: `${monthScore.color}15`, border: `1px solid ${monthScore.color}30`, borderRadius: 10, padding: "10px 14px" }}>
+        <div style={{ fontSize: 12, color: "rgba(240,240,240,0.75)", lineHeight: 1.5 }}>{monthScore.desc}</div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "12px 16px 0" }}>
+        {[
+          { color: GOLD, label: "Lucky Date" },
+          { color: "#60A5FA", label: "Moon Day (Mon)" },
+          { color: ORANGE, label: "Jupiter Day (Thu)" },
+          { color: GREEN, label: "Brainroll Day" },
+          { color: "#FFD000", label: "Peak Period" },
+        ].map(({ color, label }) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: MUTED }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {/* Day headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, padding: "12px 16px 4px" }}>
+        {DAYS_SHORT.map(d => (
+          <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 600, color: MUTED, fontFamily: getSYNE(), letterSpacing: "0.05em" }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, padding: "0 16px" }}>
+        {cells.map((date, idx) => {
+          if (!date) return <div key={idx} />;
+          const en = getDayEnergy(date, viewMonth, viewYear);
+          const key = `${viewYear}-${viewMonth}-${date}`;
+          const isToday = key === todayKey;
+          const hasNote = !!notes[key];
+          const dow = new Date(viewYear, viewMonth, date).getDay();
+
+          let bg = CARD;
+          let border = BORDER;
+          let glow = "none";
+
+          if (en.isStrongPeriod) { bg = "rgba(255,208,0,0.06)"; border = "rgba(255,208,0,0.2)"; }
+          if (en.isWeakPeriod && !en.isLucky) { bg = "#0D0D0D"; }
+          if (en.isLucky) { border = `${GOLD}55`; }
+          if (en.isMoon) { border = "rgba(96,165,250,0.4)"; }
+          if (en.isJupiter) { border = `${ORANGE}55`; }
+          if (isToday) { border = ORANGE; glow = `0 0 10px ${ORANGE}55`; }
+
+          return (
+            <div
+              key={idx}
+              className="day-cell"
+              onClick={() => openDay(date)}
+              style={{
+                background: bg,
+                border: `1px solid ${border}`,
+                borderRadius: 8,
+                padding: "6px 4px 4px",
+                minHeight: 54,
+                cursor: "pointer",
+                transition: "all 0.15s",
+                boxShadow: glow,
+                position: "relative",
+              }}
+            >
+              <div style={{
+                fontFamily: getSYNE(),
+                fontSize: isToday ? 13 : 12,
+                fontWeight: isToday ? 800 : 600,
+                color: isToday ? ORANGE : en.isWeakPeriod && !en.isLucky ? "#444" : TEXT,
+                textAlign: "center",
+                marginBottom: 3,
+              }}>{date}</div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 2, justifyContent: "center" }}>
+                {en.isLucky && <div style={{ width: 5, height: 5, borderRadius: 1, background: GOLD }} />}
+                {en.isMoon && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#60A5FA" }} />}
+                {en.isJupiter && <div style={{ width: 5, height: 5, borderRadius: 1, background: ORANGE }} />}
+                {en.isBrainroll && <div style={{ width: 5, height: 5, borderRadius: "50%", background: GREEN }} />}
+                {en.isStrongPeriod && <div style={{ width: 5, height: 5, borderRadius: 1, background: "#FFD000" }} />}
+                {hasNote && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#A855F7" }} />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* This month's lucky dates summary */}
+      <div style={{ margin: "20px 16px 0", background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 14 }}>
+        <div style={{ fontFamily: getSYNE(), fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: MUTED, marginBottom: 10 }}>This Month's Power Dates</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(date => {
+            const en = getDayEnergy(date, viewMonth, viewYear);
+            const dow = new Date(viewYear, viewMonth, date).getDay();
+            if (!en.isLucky && !en.isMoon && !en.isJupiter && !en.isStrongPeriod) return null;
+            const color = en.isStrongPeriod ? "#FFD000" : en.isLucky && (en.isMoon || en.isJupiter) ? "#FF8C00" : en.isLucky ? GOLD : en.isJupiter ? ORANGE : "#60A5FA";
+            return (
+              <div key={date} onClick={() => openDay(date)} style={{
+                background: `${color}15`, border: `1px solid ${color}40`,
+                borderRadius: 8, padding: "4px 10px", cursor: "pointer",
+                fontSize: 12, fontWeight: 600, fontFamily: getSYNE(), color,
+              }}>
+                {date} <span style={{ fontSize: 9, opacity: 0.7 }}>{DAYS_SHORT[dow]}</span>
+              </div>
+            );
+          }).filter(Boolean)}
+        </div>
+      </div>
+
+      {/* Brainroll schedule this month */}
+      <div style={{ margin: "12px 16px 0", background: "rgba(34,197,94,0.06)", border: `1px solid rgba(34,197,94,0.2)`, borderRadius: 12, padding: 14 }}>
+        <div style={{ fontFamily: getSYNE(), fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: GREEN, marginBottom: 8 }}>🧠 Brainroll Days (Tue · Thu · Sat)</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(date => {
+            const dow = new Date(viewYear, viewMonth, date).getDay();
+            if (!BRAINROLL_DAYS.includes(dow)) return null;
+            const en = getDayEnergy(date, viewMonth, viewYear);
+            return (
+              <div key={date} onClick={() => openDay(date)} style={{
+                background: en.isLucky ? "rgba(34,197,94,0.2)" : "rgba(34,197,94,0.08)",
+                border: `1px solid rgba(34,197,94,0.3)`,
+                borderRadius: 6, padding: "3px 8px", cursor: "pointer",
+                fontSize: 11, fontWeight: 600, color: GREEN,
+              }}>
+                {date} {en.isLucky ? "⭐" : ""}
+              </div>
+            );
+          }).filter(Boolean)}
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(34,197,94,0.6)", marginTop: 8 }}>Upload 3–6PM SAST · Tue: Script · Thu: Publish · Sat: Batch record</div>
+      </div>
+
+      {/* DAY MODAL */}
+      {showModal && selectedDay && (
+        <div
+          onClick={() => setShowModal(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#141414",
+              border: `1px solid ${BORDER}`,
+              borderRadius: "20px 20px 0 0",
+              padding: "20px 20px 40px",
+              width: "100%",
+              maxWidth: 520,
+              maxHeight: "80vh",
+              overflowY: "auto",
+            }}
+          >
+            {/* Handle */}
+            <div style={{ width: 36, height: 4, background: "#333", borderRadius: 2, margin: "0 auto 16px" }} />
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontFamily: getSYNE(), fontSize: 24, fontWeight: 800 }}>{MONTHS[viewMonth].slice(0,3)} {selectedDay}</div>
+                <div style={{ fontSize: 12, color: MUTED }}>{DAYS_SHORT[selDow]} · {viewYear}</div>
+              </div>
+              <button onClick={() => setShowModal(false)} style={{ background: BORDER, border: "none", color: MUTED, width: 32, height: 32, borderRadius: 8, cursor: "pointer", fontSize: 16 }}>×</button>
+            </div>
+
+            {/* Energy tags */}
+            {selEnergy && selEnergy.tags.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                {selEnergy.tags.map(t => (
+                  <div key={t.label} style={{ background: `${t.color}20`, border: `1px solid ${t.color}50`, borderRadius: 20, padding: "4px 10px", fontSize: 11, fontWeight: 600, color: t.color }}>
+                    {t.label}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* BH suggestion */}
+            {selBH && (
+              <div style={{ background: `${ORANGE}10`, border: `1px solid ${ORANGE}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: ORANGE, marginBottom: 3 }}>Branded Heights</div>
+                <div style={{ fontSize: 13, color: "rgba(240,240,240,0.8)" }}>{selBH}</div>
+              </div>
+            )}
+
+            {/* Brainroll suggestion */}
+            {selContent && (
+              <div style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: GREEN, marginBottom: 3 }}>Brainroll · {selContent[0]}</div>
+                <div style={{ fontSize: 13, color: "rgba(240,240,240,0.8)" }}>{selContent[1]}</div>
+                <div style={{ fontSize: 11, color: "rgba(34,197,94,0.6)", marginTop: 4 }}>3:00 – 6:00 PM SAST</div>
+              </div>
+            )}
+
+            {/* Note */}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 8 }}>Your Note</div>
+              <textarea
+                value={noteInput}
+                onChange={e => setNoteInput(e.target.value)}
+                placeholder="Add a note for this day..."
+                rows={3}
+                style={{
+                  width: "100%", background: "#0D0D0D", border: `1px solid ${BORDER}`,
+                  borderRadius: 10, padding: "10px 12px", color: TEXT,
+                  fontFamily: "'DM Sans', sans-serif", fontSize: 13, lineHeight: 1.5,
+                }}
+              />
+              <button
+                onClick={() => { saveNote(selKey, noteInput); setShowModal(false); }}
+                style={{
+                  marginTop: 10, width: "100%", background: ORANGE, border: "none",
+                  color: "#000", fontFamily: getSYNE(), fontSize: 13, fontWeight: 700,
+                  padding: "12px", borderRadius: 10, cursor: "pointer",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Save Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
